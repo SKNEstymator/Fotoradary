@@ -263,3 +263,11 @@ not_comply_measures %>%
   geom_violin() +  
   facet_wrap(~kind)
 ```
+
+```{r}
+file.remove('../data/foto_not_comply.txt',
+            '../data/foto_speed_max_mean.txt',
+            '../data/passive_not_comply.txt',
+            '../data/passive_speed_max_mean.txt')
+```
+
