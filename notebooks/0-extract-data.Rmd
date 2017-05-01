@@ -1,0 +1,265 @@
+---
+title: "Extract information from report (PDF) and prepare for analysis"
+output: html_notebook
+---
+
+# Pobranie pliku
+
+```{bash, download file}
+curl -o data-raw/raport.pdf 'http://www.brd24.pl/wp-content/uploads/2016/12/IBDiM_Ocena_skutecznosci_wdrazania_SANnRD-2016-08-29_v1.4-POL.pdf'
+```
+
+# Fotoradary
+
+```{bash, extract speed}
+cd data-raw/
+# max i średnie
+pdftotext -layout -f 27 -l 76 raport.pdf 
+cat  raport.txt |  grep '^\s\{0,10\}[A-ZĄĆĘŁÓŻŹŚ]' | grep -v 'Miejsca'  | egrep -o '.*(\d{1,3}\s*){12}' | tr -s ' ' | sed 's/^ //g' | sed -E 's:( *[0-9]+):\,\1:g' > ../data/foto_speed_max_mean.txt
+
+# kwantyle rozkładu
+pdftotext -layout -f 77 -l 100 raport.pdf 
+cat  raport.txt |  grep '^\s\{0,20\}[A-ZĄĆĘŁÓŻŹŚ]' | grep -v 'Miejsca'  | egrep -o '.*(\d{1,3}\s*){6}' | tr -s ' ' | sed 's/^ //g' | sed -E 's:( *[0-9]+):\,\1:g' > ../data/foto_quantiles.txt
+awk -F ',' '{print $1}' ../data/foto_quantiles.txt | sort | uniq -c | sort -nr
+
+# Procentowa liczba niestosujących się do obowiązującego ograniczenia prędkości
+pdftotext -layout -f 101 -l 130 raport.pdf 
+cat  raport.txt |  grep '^\s\{0,20\}[A-ZĄĆĘŁÓŻŹŚ]' | grep -v 'Miejsca'  | egrep -o '.*(\d{1,3}\s*){6}' | tr -s ' ' | sed 's/^ //g' | sed -E 's:( *[0-9]+):\,\1:g' > ../data/foto_not_comply.txt
+
+## check what is missing
+awk -F ',' '{print $1}' ../data/foto_not_comply.txt | sort | uniq -c | sort -nr
+
+## Domaradz is missing (gsed)
+gsed -i '46iDomaradz, 71, 56, 73, 6, 0, 64' ../data/foto_not_comply.txt
+```
+
+
+# Pasywny pomiar
+
+```{bash}
+cd data-raw/
+
+# max i średnie
+pdftotext -layout -f 141 -l 160 raport.pdf 
+cat  raport.txt |  grep '^\s\{0,10\}[A-ZĄĆĘŁÓŻŹŚ]' | grep -v 'Miejsca'  | egrep -o '.*(\d{1,3}\s*){12}' | tr -s ' ' | sed 's/^ //g' | sed -E 's:( *[0-9]+):\,\1:g' | sed -E 's/\(\,/\(/g' > ../data/passive_speed_max_mean.txt
+
+## kazdy 10 razy
+awk -F ',' '{print $1}' ../data/passive_speed_max_mean.txt | sort | uniq -c | sort -nr
+
+## kwantyle
+pdftotext -layout -f 161 -l 168 raport.pdf 
+cat  raport.txt |  grep '^\s\{0,20\}[A-ZĄĆĘŁÓŻŹŚ]' | grep -v 'Miejsca'  | egrep -o '.*(\d{1,3}\s*){6}' | tr -s ' ' | sed 's/^ //g' | sed -E 's:( *[0-9]+):\,\1:g' | sed -E 's/\(\,/\(/g' > ../data/passive_quantiles.txt
+
+## czy poprawnie
+awk -F ',' '{print $1}' ../data/passive_quantiles.txt | sort | uniq -c | sort -nr
+
+## niestosujacy się
+pdftotext -layout -f 169 -l 178 raport.pdf 
+cat  raport.txt |  grep '^\s\{0,20\}[A-ZĄĆĘŁÓŻŹŚ]' | grep -v 'Miejsca'  | egrep -o '.*(\d{1,3}\s*){6}' | tr -s ' ' | sed 's/^ //g' | sed -E 's:( *[0-9]+):\,\1:g'| sed -E 's/\(\,/\(/g' > ../data/passive_not_comply.txt
+
+## kazdy ma byc 5 razy
+awk -F ',' '{print $1}' ../data/passive_speed_max_mean.txt | sort | uniq -c | sort -nr
+```
+
+# Wczytanie do R i przygotowanie do analizy
+
+```{r}
+library('tidyr')
+library('dplyr')
+library('ggplot2')
+dir(path = '../data/')
+```
+
+## Fotoradary
+
+```{r} 
+foto_speed <- read.csv('../data/foto_speed_max_mean.txt', header = F) %>% 
+  .[,1:13] %>% 
+  as.data.frame() %>%
+tbl_df() %>%
+mutate_each(funs(as.numeric(.)),V2:V13) %>%
+rename(
+	miasto = V1,
+	dzien_przed_1 = V2,
+	dzien_przed_2 = V3,
+	dzien_przed_3 = V4,
+	dzien_po_1 = V5,
+	dzien_po_2 = V6,
+	dzien_po_3 = V7,
+	noc_przed_1 = V8,
+	noc_przed_2 = V9,
+	noc_przed_3 = V10,
+	noc_po_1 = V11,
+	noc_po_2 = V12,
+	noc_po_3 = V13) %>%
+mutate(group = rep(x = 1:10, each = 40),
+	   group = factor(x = group,
+	   				  levels = 1:10,
+	   				  labels = c('Jednoślady|Max',
+	   				  			 'Osobowe|Max','Dostawcze|Max','Ciężarowe|Max',
+	   				  			 'Ciężarowe z przyczepą i autobusy|Max',
+	   				  			 'Jednoślady|Mean',
+	   				  			 'Osobowe|Mean','Dostawcze|Mean','Ciężarowe|Mean',
+	   				  			 'Ciężarowe z przyczepą i autobusy|Mean')),
+	   	group = as.character(group)) %>%
+  separate(group, c('type', 'stat'), sep = '\\|') %>%
+  gather(dzien_przed_1:noc_po_3, key = pomiar, value = speed) %>% 
+  separate(pomiar, c('time', 'radar', 'place'), sep = '_') %>%
+  mutate(radar = ifelse(radar == 'przed', FALSE, TRUE))
+foto_speed
+```
+
+```{r}
+foto_not_comply <- read.csv('../data/foto_not_comply.txt', header = F) %>% 
+  .[,1:7] %>% 
+  as.data.frame() %>%
+tbl_df() %>%
+mutate_each(funs(as.numeric(.)),V2:V7) %>%
+rename(
+	miasto = V1,
+	przed_1 = V2,
+	przed_2 = V3,
+	przed_3 = V4,
+	po_1 = V5,
+	po_2 = V6,
+	po_3 = V7) %>%
+  mutate(group = rep(x = 1:5, each = 40),
+         group = factor(x = group,
+                       levels = 1:5, 
+                       labels = c('Jednoślady',
+                                  'Osobowe',
+                                  'Dostawcze',
+                                  'Ciężarowe',
+                                  'Ciężarowe z przyczepą i autobusy')),
+	   	group = as.character(group))  %>%
+  gather(przed_1:po_3, key = pomiar, value = not_comply) %>% 
+  separate(pomiar, c('radar', 'place'), sep = '_') %>%
+  mutate(radar = ifelse(radar == 'przed', FALSE, TRUE))
+foto_not_comply 
+```
+
+## Pomiar pasywny
+
+```{r}
+passive_speed <- read.csv('../data/passive_speed_max_mean.txt', header = F) %>% 
+  .[,1:13] %>% 
+  as.data.frame() %>%
+tbl_df() %>%
+mutate_each(funs(as.numeric(.)),V2:V13) %>%
+rename(
+	miasto = V1,
+	dzien_przed_1 = V2,
+	dzien_przed_2 = V3,
+	dzien_przed_3 = V4,
+	dzien_po_1 = V5,
+	dzien_po_2 = V6,
+	dzien_po_3 = V7,
+	noc_przed_1 = V8,
+	noc_przed_2 = V9,
+	noc_przed_3 = V10,
+	noc_po_1 = V11,
+	noc_po_2 = V12,
+	noc_po_3 = V13) %>%
+mutate(group = rep(x = 1:10, each = 12),
+	   group = factor(x = group,
+	   				  levels = 1:10,
+	   				  labels = c('Jednoślady|Max',
+	   				  			 'Osobowe|Max','Dostawcze|Max','Ciężarowe|Max',
+	   				  			 'Ciężarowe z przyczepą i autobusy|Max',
+	   				  			 'Jednoślady|Mean',
+	   				  			 'Osobowe|Mean','Dostawcze|Mean','Ciężarowe|Mean',
+	   				  			 'Ciężarowe z przyczepą i autobusy|Mean')),
+	   	group = as.character(group)) %>%
+  separate(group, c('type', 'stat'), sep = '\\|') %>%
+  gather(dzien_przed_1:noc_po_3, key = pomiar, value = speed) %>% 
+  separate(pomiar, c('time', 'radar', 'place'), sep = '_') %>%
+  mutate(radar = ifelse(radar == 'przed', FALSE, TRUE))
+passive_speed
+```
+```{r}
+passive_not_comply <- read.csv('../data/passive_not_comply.txt', header = F) %>% 
+  .[,1:7] %>% 
+  as.data.frame() %>%
+tbl_df() %>%
+mutate_each(funs(as.numeric(.)),V2:V7) %>%
+rename(
+	miasto = V1,
+	przed_1 = V2,
+	przed_2 = V3,
+	przed_3 = V4,
+	po_1 = V5,
+	po_2 = V6,
+	po_3 = V7) %>%
+  mutate(group = rep(x = 1:5, each = 12),
+         group = factor(x = group,
+                       levels = 1:5, 
+                       labels = c('Jednoślady',
+                                  'Osobowe',
+                                  'Dostawcze',
+                                  'Ciężarowe',
+                                  'Ciężarowe z przyczepą i autobusy')),
+	   	group = as.character(group))  %>%
+  gather(przed_1:po_3, key = pomiar, value = not_comply) %>% 
+  separate(pomiar, c('radar', 'place'), sep = '_') %>%
+  mutate(radar = ifelse(radar == 'przed', FALSE, TRUE))
+passive_not_comply 
+```
+
+## Zapisanie całości do dwóch plików
+
+```{r}
+speed_measures <- bind_rows(
+  foto_speed %>% 
+    mutate(kind = 'fotoradar'),
+  passive_speed %>%
+    mutate(kind = 'passive')
+) %>%
+  rename(measurement = place,
+         city = miasto) %>%
+  select(city,measurement, time, type, stat, kind, radar, speed)
+speed_measures
+write.csv2(x = speed_measures,
+           file = '../data/speed_measures.txt', 
+           row.names = FALSE,
+           quote = FALSE,
+           fileEncoding = 'utf-8')
+```
+
+```{r}
+not_comply_measures <- bind_rows(
+  foto_not_comply %>% 
+    mutate(kind = 'fotoradar'),
+  passive_not_comply %>%
+    mutate(kind = 'passive')
+) %>%
+  rename(measurement = place,
+         city = miasto,
+         type = group) %>%
+  select(city, measurement, type, kind, radar, not_comply)
+not_comply_measures
+write.csv2(x = not_comply_measures,
+           file = '../data/not_comply_measures.text', 
+           row.names = FALSE,
+           quote = FALSE,
+           fileEncoding = 'utf-8')
+```
+
+## Check if results are as expected
+
+```{r}
+speed_measures %>%
+  filter(stat == 'Mean', time == 'dzien') %>%
+  ggplot(data = .,
+         aes(x = radar, y = speed)) + 
+  geom_violin() +  
+  facet_wrap(~kind)
+```
+
+
+```{r}
+not_comply_measures %>%
+  ggplot(data = .,
+         aes(x = radar, y = not_comply)) + 
+  geom_violin() +  
+  facet_wrap(~kind)
+```

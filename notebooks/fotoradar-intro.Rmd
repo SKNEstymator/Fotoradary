@@ -1,0 +1,48 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+dane <- read.csv('foto-speed.txt', header = F)
+head(dane)
+dane <- dane[,1:13]
+```
+
+```{r}
+table(dane$V1)
+dim(dane)
+length(unique(dane$V1))
+```
+
+```{r}
+dane$stat <- rep(x = c('max', 'mean'), each = 200)
+head(dane)
+```
+
+```{r}
+dane_srednia <- subset(dane, subset = stat == 'mean')
+head(dane_srednia)
+```
+
+```{r}
+summary(dane_srednia$V2)
+summary(dane_srednia$V5)
+```
+
+```{r}
+summary(dane_srednia$V2)
+summary(dane_srednia$V3)
+summary(dane_srednia$V4)
+```
+```{r}
+summary(dane_srednia$V5)
+summary(dane_srednia$V6)
+summary(dane_srednia$V7)
+```
+
+```{r}
+boxplot(V2 ~ V1, data = dane_srednia)
+boxplot(V5 ~ V1, data = dane_srednia)
+```
+
