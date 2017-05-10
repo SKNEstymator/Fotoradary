@@ -1,0 +1,104 @@
+---
+title: "Spotkanie SKN Estymator (09.05.2016)"
+output: html_notebook
+---
+
+# Wczytuję potrzebne pakiety
+
+```{r}
+library(tidyverse)
+```
+
+
+# Wczytujemy plik z danymi
+
+```{r}
+dane <- read.csv2('../data/not_comply_measures.txt')
+dane <- dane %>% arrange(city, radar, kind, type, measurement)
+dane
+```
+
+Opis zbioru:
+
++ city -- miasto, w którym prowadzono pomiary
++ measurement -- numer pomiaru (1, 2, 3)
++ type -- typ pojazdu (5 wariantów)
++ kind -- jaki fotoradar zainstalowano
++ radar -- czy zainstalowano fotoradar (FALSE = nie, TRUE = tak)
++ not_comply -- odsetek pojazdów nieprzestrzegających przepisów (im mniej tym lepiej)
+
+# Podstawowe wizualizacje
+
+```{r}
+boxplot(not_comply ~ type, data = dane, cex.axis = 0.6)
+boxplot(not_comply ~ city, data = dane, cex.axis = 0.6)
+boxplot(not_comply ~ radar, data = dane, cex.axis = 0.6)
+```
+
+```{r}
+dane %>%
+  filter(kind == 'fotoradar') %>% 
+  ggplot(data = ,
+       aes(x = radar,
+           y = not_comply)) +
+  geom_violin() + 
+  geom_jitter(alpha = 0.5) + 
+  facet_wrap(~city)
+```
+
+```{r}
+dane %>%
+  filter(kind == 'passive') %>% 
+  ggplot(data = ,
+       aes(x = radar,
+           y = not_comply)) +
+  geom_violin() + 
+  geom_jitter(alpha = 0.5) + 
+  facet_wrap(~city)
+```
+
+
+Czy są różnice? Obliczamy w ilu przypadkach spadł udział pojazdów nieprzestrzegających przepisów
+
+```{r}
+dane %>%
+  spread(radar, not_comply) %>%
+  mutate(diff = `FALSE` - `TRUE` > 0) %>%
+  count(diff) %>%
+  mutate(p = n/sum(n))
+```
+
+
+# Testy statystyczne
+
+## Test t-studenta
+
+```{r}
+var.test(not_comply ~ radar, data = dane) ## wariancje nie są równe
+t.test(not_comply ~ radar, data = dane, var.equal = FALSE) 
+```
+
+## Test U Wilcoxa-Manna-Whitneya
+
+```{r}
+wilcox.test(not_comply ~ radar, data = dane)
+```
+
+## Wiele średnich
+
+```{r}
+dane %>%
+  group_by(kind,radar) %>%
+  summarise(m = mean(not_comply))
+```
+
+```{r}
+anova1 <- aov(not_comply ~ type, 
+              data = dane,
+              contrasts = list(type = contr.sum))
+summary(anova1)
+coefficients(anova1)
+TukeyHSD(anova1)
+```
+
+
