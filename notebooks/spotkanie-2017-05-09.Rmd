@@ -14,7 +14,9 @@ library(tidyverse)
 
 ```{r}
 dane <- read.csv2('../data/not_comply_measures.txt')
-dane <- dane %>% arrange(city, radar, kind, type, measurement)
+dane <- dane %>% 
+  arrange(city, radar, kind, type, measurement) %>%
+  mutate(kind_final = ifelse(radar, kind, 'before'))
 dane
 ```
 
@@ -26,6 +28,7 @@ Opis zbioru:
 + kind -- jaki fotoradar zainstalowano
 + radar -- czy zainstalowano fotoradar (FALSE = nie, TRUE = tak)
 + not_comply -- odsetek pojazdów nieprzestrzegających przepisów (im mniej tym lepiej)
++ kind_final -- zmienna jakościowa (3 warianty, before, fotoradar, passive)
 
 # Podstawowe wizualizacje
 
@@ -33,6 +36,7 @@ Opis zbioru:
 boxplot(not_comply ~ type, data = dane, cex.axis = 0.6)
 boxplot(not_comply ~ city, data = dane, cex.axis = 0.6)
 boxplot(not_comply ~ radar, data = dane, cex.axis = 0.6)
+boxplot(not_comply ~ kind_final, data = dane, cex.axis = 0.6)
 ```
 
 ```{r}
@@ -62,6 +66,7 @@ Czy są różnice? Obliczamy w ilu przypadkach spadł udział pojazdów nieprzes
 
 ```{r}
 dane %>%
+  select(-kind_final) %>%
   spread(radar, not_comply) %>%
   mutate(diff = `FALSE` - `TRUE` > 0) %>%
   count(diff) %>%

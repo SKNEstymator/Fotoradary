@@ -1,0 +1,200 @@
+---
+title: "R Notebook"
+output: 
+  html_notebook: 
+    number_sections: yes
+    toc: yes
+---
+
+# Wczytanie danych i potrzebnych pakietów
+
+```{r}
+library(tidyverse)
+library(multcomp)
+library(agricolae) ## wybrane testy post-hoc
+dane <- read.csv2('../data/not_comply_measures.txt')
+dane <- dane %>% 
+  arrange(city, radar, kind, type, measurement) %>%
+  mutate(kind_final = ifelse(radar, kind, 'before'))
+dane
+```
+
+# Jednoczynnikowa anova i porównania parami
+
+## Wprowadzenie teoretyczne
+
+ANOVA = Analysis Of Variance 
+
+Oznaczenia:
+
++ $y$ -- cecha ciągła
++ $X$ -- jakościowa zmienna objaśniająca (zmienna grupująca)
++ $k$ -- liczba poziomów, które przyjmuje cecha $X$
++ $y_{ij}$ -- wartość $j$-tej obserwacji w $i$-tej grupie
++ $n$ -- liczba obserwacji
+
+$$
+y_{ij} \sim N(\mu_i, \sigma^2),
+$$
+
+gdzie: $1 \leq i \leq k$, $1 \leq j \leq n_i$, $\sum_{i=1}^{k} n_i = n$, $\mu_i$ to średnia wartość zmiennej objaśnianej w grupie $i$, $\sigma^2$ wariancja, która jet równa dla wszystkich grup ($\sigma^2_1 = \sigma^2_2 = .. = \sigma^2_{k} = \sigma^2$).
+
+Jeżeli $\forall_{k \neq l} n_k = n_l$ to mówimy o układzie zrównoważonym (ang. balanced), w przeciwnym wypadku ($\exists_{k \neq l} n_k \neq n_l$) to jest to układ niezrównoważony (ang. unbalanced).
+
+W jednokierunkowej analizie wariancji testujemy następujący układ hipotez
+
+$$
+H_0: \mu_1 = \mu_2 = ... = \mu_k,
+$$
+ 
+przeciwko alternatywnej
+
+$$
+H_1: \exists_{i \neq m} \mu_i = \mu_m
+$$
+
+Można użyć również następujacej paramteryzacji
+
+$$
+\begin{cases}
+\mu_1 & = \mu + \alpha_1 \\
+\mu_2 & = \mu + \alpha_2 \\
+... \\ 
+\mu_k & = \mu + \alpha_k \\
+\end{cases}
+$$
+gdzie $\alpha_i$ to różnica pomiędzy średnią $\mu_i$, a średnią globalną $\mu$.
+
+Dlatego, że parametrów w takim ukłądzie jest $k+1$ ($\mu$ + $\alpha_i$), a średnich tylko $k$ wprowadza się następujące m.in. następujące ograniczenia (dwa najczęstsze):
+
++ sumy (w R `contr.sum`)
+$$
+\sum_{i=1}^k \alpha_i = 0
+$$
+przy założeniu, że $\mu$ to średnia w populacji,
+
++ grupy referencyjnej (w R `contr.treatment`)
+
+$$
+\alpha_1 = 0
+$$
+gdzie pierwsza grupa jest referencyjną, $\mu$ to średnia w tej grupie, a $\alpha_i$ to różnica w średnich pomiędzy $i$ tą grupą, a pierwszą / referencyjną. Uwaga, w SAS domyślny poziom referencyjny to ostatni!
+
+Problem ten możemy również zapisać w postaci modelu liniowego
+
+$$
+y = X\beta + \epsilon,
+$$
+gdzie $\beta = (\mu, \alpha_2,...,\alpha_k)$ ponieważ w takim przypadku domyślnie zakładamy, że pierwsza grupa jest referencyjna ($\mu = \mu_1$), a $\epsilon \sim N(0, \boldsymbol{I}_{n \times n}\sigma^1)$.
+
+## Przykład -- czy wszystkie pojazdy przestrzegają tak samo prędokości?
+
+Wybierzemy dane przed ustawieniem automatycznego pomiaru prędkości.
+
+```{r}
+dane_przed <- dane %>% filter(radar == FALSE)
+boxplot(not_comply ~ type, data = dane_przed, cex.axis = 0.6)
+means <- tapply(dane_przed$not_comply,dane_przed$type,mean)
+points(means, col = "red", pch = 18)
+```
+
+Na wykresie widzimy zróżnicowanie w przypadku pojazdów. Najwięcej przestrzegających było w grupie jednośladów. Należy jednak podkreślić, że liczba jednośladów była mała. Dodatkowo widzimy, że założenie o stałej wariancji będzie błędne.
+
+```{r}
+dane_przed %>%
+  group_by(type) %>%
+  summarise(srednia = mean(not_comply),
+            wariancja = var(not_comply))
+```
+
+Przeprowadzimy jednoczynnikową anovę z wykorzystaniem funkcji `aov` oraz `lm` i `anova`
+
+```{r}
+anova_1 <- aov(not_comply ~ type, dane_przed)
+anova_1
+summary(anova_1)
+```
+
+```{r}
+lm_1 <- lm(not_comply ~ type, dane_przed)
+anova(lm_1)
+```
+
+Zobaczmy, jak kodowane są dane w przypadku regresji z funkcją `model.matrix`
+
+```{r}
+model.matrix(not_comply ~ type, dane_przed) %>%
+  head()
+```
+
+
+## Porównanie parami
+
+Póki co Anova nie odpowada nam na pytanie, które pary się różnią, jedynie, że się różnią. Co możemy zrobić aby to poznać? Możemy skorzystać z porównania parami
+
+```{r}
+pairwise.t.test(dane_przed$not_comply,dane_przed$type)
+```
+
+Wykorzystajmy testy porównania parami, ale najpierw sprawdźmy czy wszystkie grupy są tak samo liczne
+
+```{r}
+table(dane_przed$type) 
+```
+
+Jeżeli są, to możemy zastosować porównanie parami dla grup o takiej samej wielkości, m.in:
+
++ test HSD Tukeya
++ test Studenta-Newmana-Keulsa
++ test LSD Fishera czy test Scheffe -- choć nie zakłada tej samej liczebności
+
+
+```{r}
+TukeyHSD(anova_1) ## pakiet stats
+```
+
+Teraz spójrzmy na testy z pakietu `agricolae`
+
+```{r}
+HSD.test(anova_1,'type', console = T)
+```
+
+```{r}
+SNK.test(anova_1,'type', console = T)
+```
+
+```{r}
+LSD.test(anova_1,'type', console = T, p.adj  = 'holm')
+```
+
+## Homogeniczność wariancji
+
+Aby sprawdzić czy wariancje są równe w grupach można skorzystać z następujących testów:
+
++ jeżeli zmienna ma rozkład normalny:
+    + test Bartletta -- `bartlett.test()` -- bardzo wrażliwy na złamanie tego założenia
+    + test F -- `var.test()` -- porównanie tylko dwóch grup!!
++ jeżeli zmienna nie ma rozkładnu normalnego:
+    + test Flingera-Killeena -- `flinger.test()`
+    + test Levene'a oraz test Browna Forsytha -- `levene.test()` -- bardziej odporne na odstępstwa od rozkładu normalnego
+    
+    
+```{r}
+bartlett.test(not_comply ~ type, dane_przed)
+```
+
+```{r}
+fligner.test(not_comply ~ factor(type), data = dane_przed)
+```
+
+```{r}
+car::leveneTest(not_comply ~ factor(type), data = dane_przed)
+```
+
+```{r}
+mean(dane_przed$not_comply) 
+m1 <- lm(not_comply ~ type,  data = dane_przed, contrasts = list(type = contr.sum))
+summary(m1) ## parametr jest równy średniej tylo dlatego, że wszystkie grupy są takiej samej liczebności (?)
+```
+
+
