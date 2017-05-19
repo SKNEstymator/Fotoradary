@@ -65,6 +65,12 @@ summary(wynik_1)
 $$
 \alpha = 0.05
 $$
+Jeżeli nie są wariancje nie są równe w grupach stosujemy `oneway.test`
+
+```{r}
+wynik_2 <- oneway.test(formula = speed ~ vehicle_type, data = dane)
+wynik_2
+```
 
 ## Budujemy model regresji liniowej
 
@@ -125,5 +131,19 @@ TukeyHSD(wynik_1)
 
 ```{r}
 agricolae::LSD.test(wynik_1,'vehicle_type', console = T, p.adj  = 'holm')
+```
+
+## Testy post-hoc
+
+```{r}
+pairwise.t.test(dane$speed,dane$vehicle_type, paired = FALSE, p.adjust.method = 'holm')
+```
+
+```{r}
+library(multcomp)
+dane$vehicle_type <- factor(dane$vehicle_type)
+wynik_1 <- aov(formula = speed ~ vehicle_type, data = dane)
+wynik_parami <- glht(model = wynik_1, linfct = mcp(vehicle_type = "Tukey"))
+summary(wynik_parami)
 ```
 

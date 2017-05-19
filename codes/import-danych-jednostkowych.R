@@ -126,6 +126,17 @@ dane <- dane %>%
   left_join(ograniczenia, by = c('city'='miasto')) %>%
   tbl_df()
 
+## pozbawiam polskich znaków
+
+dane <- dane %>%
+  mutate(direction = stri_trans_general(direction, "latin-ascii"),
+         vehicle_type = stri_trans_general(vehicle_type, "latin-ascii"),
+         radar_type = ifelse(when == 'przed','none',radar_type))
+
+dane %>%
+  count(radar_type)
+
+
 fwrite(x = dane, file = 'data/raw-data.csv') 
 saveRDS(dane, file = 'data/raw-data.RDS', compress = TRUE)
 
