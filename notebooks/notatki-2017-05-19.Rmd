@@ -1,0 +1,129 @@
+---
+title: "Notatki ze spotkania - 19.05.2017"
+output: html_notebook
+---
+
+# Wczytanie danych
+
+Wczytanie danych
+
+```{r}
+dane <- readRDS('../data/raw-data.RDS')
+dane
+```
+
+```{r}
+table(dane$vehicle_type)
+```
+
+
+```{r}
+dane <- subset(dane, vehicle_type != '')
+dane
+```
+
+```{r}
+table(dane$direction)
+```
+
+```{r}
+dane <- subset(dane, direction == 'Nadjeżdżające')
+dane
+```
+
+# Analiza wariancji
+
+Przeprowadzamy analizę wariancji wg pojazdu, następnie według miasta
+
+```{r}
+var(dane$speed)
+mean(dane$speed)
+```
+
+```{r}
+aggregate(speed ~ vehicle_type, dane, FUN = var)
+```
+
+```{r}
+aggregate(speed ~ vehicle_type, dane, FUN = mean)
+```
+
+```{r}
+aggregate(speed ~ vehicle_type, dane, FUN = median)
+```
+
+```{r}
+boxplot(speed ~ vehicle_type, dane)
+```
+
+
+```{r}
+wynik_1 <- aov(formula = speed ~ vehicle_type, data = dane)
+summary(wynik_1)
+```
+
+$$
+\alpha = 0.05
+$$
+
+## Budujemy model regresji liniowej
+
+```{r}
+model_lm_1 <- lm(formula = speed ~ vehicle_type, data = dane)
+summary(model_lm_1)
+```
+
+```{r}
+contr.treatment(1:5)
+```
+
+
+```{r}
+contr.sum(1:5)
+```
+
+```{r}
+model_lm_2 <- lm(formula = speed ~ vehicle_type, 
+                 data = dane,
+                 contrasts = list(
+                              vehicle_type = contr.sum
+                              ))
+summary(model_lm_2)
+```
+
++ vehicle_type1 -- Cieżarówka z przyczepą $\alpha_1=4.74033$, a $\mu_1 = \mu + \alpha_1$ = `r 52.58879+4.74033`
++ vehicle_type2 -- Cieżąrówki = 
++ vehicle_type3 -- Jednoślady
++ vehicle_type4 -- Samochód osobowy 
++ vehicle_type5 -- $\alpha_5 = -\alpha_1 - \alpha_2 - \alpha_3 - \alpha4$ ? 
+
+```{r}
+-4.74033-3.38520--15.58467-2.88664
+(-4.74033-3.38520--15.58467-2.88664) + 52.58879
+```
+
+```{r}
+table(dane$vehicle_type)
+```
+
+## Porównujemy grupy parami
+
+Test HSD Tukey'a jest poprawny zastosowany tylko w przypadku równych grup.
+
+```{r}
+TukeyHSD(wynik_1)
+```
+
+```{r}
+# Cieżarówka z przyczepą	57.32912			
+# Cieżąrówki	55.97399			
+# Jednoślady	37.00412			
+# Samochód osobowy	55.47543			
+# Samochody dostawcze	57.16129	
+```
+
+
+```{r}
+agricolae::LSD.test(wynik_1,'vehicle_type', console = T, p.adj  = 'holm')
+```
+
